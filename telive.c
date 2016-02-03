@@ -1,7 +1,7 @@
 /* telive v1.6 - tetra live monitor
  * (c) 2014-2016 Jacek Lipkowski <sq5bpf@lipkowski.org>
- * Licensed under GPLv3, please read the file LICENSE, which accompanies 
- * the telive program sources 
+ * Licensed under GPLv3, please read the file LICENSE, which accompanies
+ * the telive program sources
  *
  * Changelog:
  * v1.6 - various fixes, add a star to the status line to show if there is network coverage, show afc info --sq5bpf
@@ -16,9 +16,9 @@
  * v0.7 - initial public release --sq5bpf
  *
  *
- * TODO: 
- * ack! functions with no bounds checking, usage of popen, environment 
- * variables instead of getopt(), spaghetti code - basically this should 
+ * TODO:
+ * ack! functions with no bounds checking, usage of popen, environment
+ * variables instead of getopt(), spaghetti code - basically this should
  * be rewritten from scratch some day :)
  */
 
@@ -44,6 +44,7 @@
 #include <fcntl.h>
 
 #include "telive.h"
+#include "telive-zmq.h"
 
 #define TELIVE_VERSION "1.6"
 
@@ -177,7 +178,7 @@ struct freqinfo *frequencies=NULL;
 
 int curplayingidx=0;
 time_t curplayingtime=0;
-int curplayingticks=0; 
+int curplayingticks=0;
 FILE *playingfp=NULL;
 int mutessi=0;
 int alldump=0;
@@ -296,10 +297,10 @@ void add_location(int ssi,float lattitude,float longtitude,char *description)
 	if (!ptr) {
 		ptr=calloc(1,sizeof(struct locations));
 		if (!kml_locations) kml_locations=ptr;
-		if (prevptr) { 
-			ptr->prev=prevptr; 
-			prevptr->next=ptr; 
-		} 
+		if (prevptr) {
+			ptr->prev=prevptr;
+			prevptr->next=ptr;
+		}
 		ptr->ssi=ssi;
 	} else {
 		free(ptr->description);
@@ -311,7 +312,7 @@ void add_location(int ssi,float lattitude,float longtitude,char *description)
 	ptr->description=strdup(description);
 	c=ptr->description;
 	/* ugly hack so that we don't get <> there, which would break the xml */
-	while(*c) { if (*c=='>') *c='G';  if (*c=='<') *c='L'; c++; } 
+	while(*c) { if (*c=='>') *c='G';  if (*c=='<') *c='L'; c++; }
 	kml_changed=1;
 
 }
@@ -400,7 +401,7 @@ void updidx(int idx) {
 		if (ssis[idx].ssi[i]) {
 			wprintw(mainwin,"%8i %20s",ssis[idx].ssi[i],lookupssi(ssis[idx].ssi[i]));
 		}
-		else 
+		else
 		{
 			wprintw(mainwin,"                              ");
 
@@ -486,7 +487,7 @@ void updopis()
 		case  1:	wprintw(titlewin," Filter ON"); break;
 		case -1:	wprintw(titlewin," Inv. Filt"); break;
 	}
-	wprintw(titlewin," [%s] ",ssi_filter); 
+	wprintw(titlewin," [%s] ",ssi_filter);
 
 	ref=1;
 }
@@ -503,13 +504,16 @@ int addssi(int idx,int ssi)
 			return(1);
 		}
 	}
+
+    telive_zmq_msg ("ADD", ssi);
+
 	for(i=0;i<3;i++) {
 		if (!ssis[idx].ssi[i]) {
 			ssis[idx].ssi[i]=ssi;
 			ssis[idx].ssi_time[i]=time(0);
 			return(1);
 		}
-	}	
+	}
 
 
 
@@ -542,6 +546,8 @@ int releasessi(int ssi)
 				ssis[i].play=0;
 				updidx(i);
 				ref=1;
+
+                telive_zmq_msg ("RELEASE", ssi);
 			}
 		}
 	}
@@ -549,20 +555,20 @@ int releasessi(int ssi)
 }
 
 /* check if an SSI matches the filter expression */
-int matchssi(int ssi) 
+int matchssi(int ssi)
 {
 	int r;
 	char ssistr[16];
 	if (!ssi) return(0);
 	sprintf(ssistr,"%i",ssi);
-	if (strlen(ssi_filter)==0) return(1); 
+	if (strlen(ssi_filter)==0) return(1);
 
 #ifdef FNM_EXTMATCH
 	r=fnmatch((char *)&ssi_filter,(char *)&ssistr,FNM_EXTMATCH);
 #else
 	/* FNM_EXTMATCH is a GNU libc extension, not present in other libcs, like the MacOS X one */
 #warning -----------    Extended match patterns for fnmatch are not supported by your libc. You will have to live with that.    ------------
-	r=fnmatch((char *)&ssi_filter,(char *)&ssistr,0); 
+	r=fnmatch((char *)&ssi_filter,(char *)&ssistr,0);
 #endif
 	return(!r);
 }
@@ -574,9 +580,9 @@ int matchidx(int idx)
 	int j=0;
 	if (!use_filter) return (1);
 	for(i=0;i<3;i++) {
-		if (matchssi(ssis[idx].ssi[i])) { 
-			j=1; 
-			break; 
+		if (matchssi(ssis[idx].ssi[i])) {
+			j=1;
+			break;
 		}
 	}
 	if (use_filter==-1) j=!j;
@@ -639,7 +645,7 @@ void timeout_receivers() {
 	time_t timenow=time(0);
 
 	while(ptr) {
-		if ((timenow-ptr->lastseen)>receiver_timeout) 
+		if ((timenow-ptr->lastseen)>receiver_timeout)
 		{
 			prevptr=ptr->prev;
 			nextptr=ptr->next;
@@ -694,13 +700,13 @@ insert_freq(int reason,uint16_t mnc,uint16_t mcc,uint32_t ulf,uint32_t dlf,uint1
 	if (!ptr) {
 		ptr=calloc(1,sizeof(struct freqinfo));
 		if (!frequencies) frequencies=ptr;
-		if (prevptr) { 
-			ptr->prev=prevptr; 
-			prevptr->next=ptr; 
+		if (prevptr) {
+			ptr->prev=prevptr;
+			prevptr->next=ptr;
 		}
 	} else {
 
-	}	
+	}
 	if ((verbose)&&(reason!=REASON_NETINFO)) {
 		wprintw(statuswin,"Down:%3.4fMHz Up:%3.4fMHz LA:%i MCC:%i MNC:%i reason:%i RX:%i\n",dlf/1000000.0,ulf/1000000.0,la,mcc,mnc,reason,rx);
 		wrefresh(statuswin);
@@ -824,14 +830,14 @@ void display_freq() {
 		char buf[24]="[..........:..........]";
 		int i;
 		i=(11+rptr->afc/10);
-		if (i<2) { buf[2]='<'; } 
+		if (i<2) { buf[2]='<'; }
 		else  if (i>21) { buf[21]='>'; } else { buf[i]='|';  }
 
 		sprintf(tmpstr,"%i\t%+3.3i %s",rptr->rxid,rptr->afc,buf);
 		if (rptr->freq) {
 			sprintf(tmpstr2,"%3.4fMHz",rptr->freq/1000000.0);
 			strcat(tmpstr,tmpstr2);
-		} 
+		}
 		wprintw(freqwin,"%s\n",tmpstr);
 		rptr=rptr->next;
 	}
@@ -872,7 +878,7 @@ int findtoplay(int first)
 		}
 	}
 	curplayingidx=0;
-	return(0); 
+	return(0);
 }
 
 void timeout_ssis(time_t t)
@@ -881,6 +887,8 @@ void timeout_ssis(time_t t)
 	for (i=0;i<MAXUS;i++) {
 		for (j=0;j<3;j++) {
 			if ((ssis[i].ssi[j])&&(ssis[i].ssi_time[j]+ssi_timeout<t)) {
+                telive_zmq_msg("TIMEOUT", ssis[i].ssi[j]);
+
 				ssis[i].ssi[j]=0;
 				ssis[i].ssi_time[j]=0;
 				updidx(i);
@@ -1000,13 +1008,13 @@ void tickf ()
 	timeout_curplaying(t);
 	timeout_rec(t);
 	if (ref) refresh_scr();
-	if (last_burst) { 
+	if (last_burst) {
 		if (last_burst==1) {
-			last_burst--; 
+			last_burst--;
 			wprintw(statuswin,"Signal lost\n");
-			updopis(); 
+			updopis();
 		} else {
-			last_burst--; 
+			last_burst--;
 		}
 	}
 	if ((kml_changed)&&(kml_interval)&&((t-last_kml_save)>kml_interval)) dump_kml_file();
@@ -1124,7 +1132,7 @@ void keyf(unsigned char r)
 			wprintw(statuswin,"z-forget learned info\n");
 			ref=1;
 			break;
-		default: 
+		default:
 			wprintw(statuswin,"unknown key [%c] 0x%2.2x\n",r,r);
 			ref=1;
 	}
@@ -1189,7 +1197,7 @@ int parsestat(char *c)
 	if (cmpfunc(func,"BURST")) {
 		if (!last_burst) {
 			last_burst=10;
-			updopis(); 
+			updopis();
 			wprintw(statuswin,"Signal found\n");
 		} else {
 			last_burst=10;
@@ -1206,9 +1214,9 @@ int parsestat(char *c)
 
 	if (cmpfunc(func,"NETINFO")) {
 		writeflag=0;
-		tmpmnc=getptrint(c,"MNC:",16);	
-		tmpmcc=getptrint(c,"MCC:",16);	
-		tmpcolour_code=getptrint(c,"CCODE:",16);	
+		tmpmnc=getptrint(c,"MNC:",16);
+		tmpmcc=getptrint(c,"MCC:",16);
+		tmpcolour_code=getptrint(c,"CCODE:",16);
 		tmpdlf=getptrint(c,"DLF:",10);
 		tmpulf=getptrint(c,"ULF:",10);
 		tmpla=getptrint(c,"LA:",10);
@@ -1234,8 +1242,8 @@ int parsestat(char *c)
 	}
 	if (cmpfunc(func,"FREQINFO1")) {
 		writeflag=0;
-		tmpmnc=getptrint(c,"MNC:",16);	
-		tmpmcc=getptrint(c,"MCC:",16);	
+		tmpmnc=getptrint(c,"MNC:",16);
+		tmpmcc=getptrint(c,"MCC:",16);
 		tmpdlf=getptrint(c,"DLF:",10);
 		tmpulf=getptrint(c,"ULF:",10);
 		tmpla=getptrint(c,"LA:",10);
@@ -1244,8 +1252,8 @@ int parsestat(char *c)
 	}
 	if (cmpfunc(func,"FREQINFO2")) {
 		writeflag=0;
-		tmpmnc=getptrint(c,"MNC:",16);	
-		tmpmcc=getptrint(c,"MCC:",16);	
+		tmpmnc=getptrint(c,"MNC:",16);
+		tmpmcc=getptrint(c,"MCC:",16);
 		tmpdlf=getptrint(c,"DLF:",10);
 		tmpulf=getptrint(c,"ULF:",10);
 		tmpla=getptrint(c,"LA:",10);
@@ -1266,7 +1274,7 @@ int parsestat(char *c)
 		latptr=getptr(c," lat:");
 		lonptr=getptr(c," lon:");
 		if ((strstr(c,"Text")))
-		{ 
+		{
 			wprintw(statuswin,"SDS %i->%i %s\n",callingssi,calledssi,sdsbegin);
 			ref=1;
 
@@ -1278,12 +1286,12 @@ int parsestat(char *c)
 			lattitude=atof(latptr);
 			longtitude=atof(lonptr);
 			t=latptr;
-			while ((*t)&&(*t!=' ')) { 
+			while ((*t)&&(*t!=' ')) {
 				if (*t=='S') { lattitude=-lattitude; break; }
 				t++;
 			}
 			t=lonptr;
-			while ((*t)&&(*t!=' ')) { 
+			while ((*t)&&(*t!=' ')) {
 				if (*t=='W') { longtitude=-longtitude; break; }
 				t++;
 			}
@@ -1308,8 +1316,8 @@ int parsestat(char *c)
 	}
 	if (cmpfunc(func,"D-RELEASE"))
 	{
-		/* don't use releasessi for now, as we can have the same ssi 
-		 * on different usage identifiers. one day this should be 
+		/* don't use releasessi for now, as we can have the same ssi
+		 * on different usage identifiers. one day this should be
 		 * done properly with notif. ids */
 		//		releasessi(ssi);
 	}
@@ -1385,7 +1393,7 @@ int parsetraffic(unsigned char *buf)
 			ref=1;
 		}
 		if ((strlen(ssis[usage].curfile)==0)||(ssis[usage].ssi_time_rec+rec_timeout<tt)) {
-			/* either it has no name, or there was a timeout, 
+			/* either it has no name, or there was a timeout,
 			 * change the file name */
 			strftime(ssis[usage].curfiletime,32,"%Y%m%d_%H%M%S",localtime(&tt));
 			sprintf(ssis[usage].curfile,"%s/traffic_%i.tmp",outdir,usage);
@@ -1394,7 +1402,7 @@ int parsetraffic(unsigned char *buf)
 		}
 		if (strlen(ssis[usage].curfile))
 		{
-			if (ps_record) {	
+			if (ps_record) {
 				f=fopen(ssis[usage].curfile,"ab");
 				if (f) {
 					fwrite(c, 1, len, f);
@@ -1438,7 +1446,7 @@ void get_cfgenv() {
 	{
 		ssifile=getenv("TETRA_SSI_DESCRIPTIONS");
 	} else {
-		ssifile=def_ssifile;	
+		ssifile=def_ssifile;
 	}
 
 	if (getenv("TETRA_KML_FILE"))
@@ -1479,11 +1487,14 @@ int main(void)
 	char *c,*d;
 	int len;
 	int tport;
+
+    telive_zmq_init();
+
 	//system("resize -s 60 203"); /* this blocks on some xterms, no idea why */
 	if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
 		diep("socket");
 
-	get_cfgenv(); 
+	get_cfgenv();
 	if (getenv("TETRA_PORT"))
 	{
 		tport=atoi(getenv("TETRA_PORT"));
@@ -1570,10 +1581,10 @@ int main(void)
 
 			} else
 			{
-				if (len==1386) 
-				{ 
+				if (len==1386)
+				{
 					if (newopis()) initopis();
-					parsetraffic(buf);		
+					parsetraffic(buf);
 				} else
 				{
 
